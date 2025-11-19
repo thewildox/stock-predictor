@@ -50,8 +50,7 @@ def compute_atr(df, window=14):
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     return tr.rolling(window).mean()
 
-# Main feature builder
-def build_features(df, ticker, main_folder=os.getcwd()):
+def build_features(df, ticker):
     logger.info(f"Building features for {ticker} | Rows: {len(df)}")
 
     # Ensure proper date sorting
@@ -82,11 +81,9 @@ def build_features(df, ticker, main_folder=os.getcwd()):
     df["daily_range"] = df["High"] - df["Low"]
     df["candle_body"] = (df["Close"] - df["Open"]).abs()
     df["vol_ratio"] = df["candle_body"] / df["daily_range"]
-
     df["vol_5"] = df["return_1d"].rolling(5).std()
     df["vol_10"] = df["return_1d"].rolling(10).std()
     df["vol_20"] = df["return_1d"].rolling(20).std()
-
     df["ATR_14"] = compute_atr(df, window=14)
 
     # MACD indicators
@@ -125,8 +122,17 @@ def build_features(df, ticker, main_folder=os.getcwd()):
     df.dropna(inplace=True)
     logger.info(f"Dropped {initial_len - len(df)} rows due to indicator warm-up")
 
+    # Automatically detect project root (folder containing 'data')
+    current_folder = os.getcwd()
+    root_folder = current_folder
+    while not os.path.exists(os.path.join(root_folder, "data")):
+        parent = os.path.dirname(root_folder)
+        if parent == root_folder:  # Reached filesystem root
+            raise FileNotFoundError("Could not find 'data' folder in any parent directory.")
+        root_folder = parent
+
     # Save processed file in main data/processed folder
-    processed_folder = os.path.join(main_folder, "data", "processed")
+    processed_folder = os.path.join(root_folder, "data", "processed")
     os.makedirs(processed_folder, exist_ok=True)
     processed_path = os.path.join(processed_folder, f"{ticker}_features.csv")
     df.to_csv(processed_path, index=False)
