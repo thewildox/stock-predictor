@@ -50,40 +50,35 @@ def compute_atr(df, window=14):
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     return tr.rolling(window).mean()
 
-
 # Main feature builder
-def build_features(ticker):
-    raw_path = f"data/raw/{ticker}.csv"
-
-    if not os.path.exists(raw_path):
-        logger.error(f"No raw data found: {raw_path}")
-        return None
-
-    df = pd.read_csv(raw_path, parse_dates=["Date"])
+def build_features(df, ticker, main_folder=os.getcwd()):
     logger.info(f"Building features for {ticker} | Rows: {len(df)}")
 
-    # Sort by date
+    # Ensure proper date sorting
+    df = df.copy()
+    if not pd.api.types.is_datetime64_any_dtype(df['Date']):
+        df['Date'] = pd.to_datetime(df['Date'])
     df.sort_values("Date", inplace=True)
     df.reset_index(drop=True, inplace=True)
 
-    #Existing returns (target)
+    # Existing returns (target)
     df["return_1d"] = df["Close"].pct_change(1)
     df["return_3d"] = df["Close"].pct_change(3)
     df["return_7d"] = df["Close"].pct_change(7)
 
-    #Additional returns (Features)
+    # Additional returns (Features)
     df["return_2d"] = df["Close"].pct_change(2)
     df["return_5d"] = df["Close"].pct_change(5)
     df["return_10d"] = df["Close"].pct_change(10)
 
-    #Moving averages
+    # Moving averages
     df["SMA_5"] = df["Close"].rolling(5).mean()
     df["SMA_10"] = df["Close"].rolling(10).mean()
     df["EMA_12"] = df["Close"].ewm(span=12, adjust=False).mean()
     df["EMA_26"] = df["Close"].ewm(span=26, adjust=False).mean()
     df["EMA_50"] = df["Close"].ewm(span=50, adjust=False).mean()
 
-    #Volatility features
+    # Volatility features
     df["daily_range"] = df["High"] - df["Low"]
     df["candle_body"] = (df["Close"] - df["Open"]).abs()
     df["vol_ratio"] = df["candle_body"] / df["daily_range"]
@@ -94,48 +89,48 @@ def build_features(ticker):
 
     df["ATR_14"] = compute_atr(df, window=14)
 
-    #MACD indicators
+    # MACD indicators
     df["MACD"], df["MACD_signal"], df["MACD_hist"] = compute_macd(df["Close"])
 
-    #RSI
+    # RSI
     df["RSI_14"] = compute_rsi(df["Close"], window=14)
 
-    #Bollinger Bands
+    # Bollinger Bands
     sma20 = df["Close"].rolling(20).mean()
     std20 = df["Close"].rolling(20).std()
-
     df["BB_upper"] = sma20 + 2 * std20
     df["BB_lower"] = sma20 - 2 * std20
     df["BB_width"] = df["BB_upper"] - df["BB_lower"]
     df["BB_percent"] = (df["Close"] - df["BB_lower"]) / (df["BB_upper"] - df["BB_lower"])
 
-    #Stochastic + CCI
+    # Stochastic + CCI
     df["Stoch_K"], df["Stoch_D"] = compute_stochastic(df)
     df["CCI_20"] = compute_cci(df)
 
-    #Candlestick structural features
+    # Candlestick structural features
     df["upper_shadow"] = df["High"] - df[["Open", "Close"]].max(axis=1)
     df["lower_shadow"] = df[["Open", "Close"]].min(axis=1) - df["Low"]
     df["is_bull"] = (df["Close"] > df["Open"]).astype(int)
     df["big_move"] = (df["candle_body"] > df["ATR_14"]).astype(int)
 
-    #Day-of-week features
+    # Day-of-week features
     df["Monday"] = (df["Date"].dt.dayofweek == 0).astype(int)
     df["Tuesday"] = (df["Date"].dt.dayofweek == 1).astype(int)
     df["Wednesday"] = (df["Date"].dt.dayofweek == 2).astype(int)
     df["Thursday"] = (df["Date"].dt.dayofweek == 3).astype(int)
     df["Friday"] = (df["Date"].dt.dayofweek == 4).astype(int)
 
-    # Drop rows with NaN from indicators requiring history
+    # Drop rows lost due to rolling windows
     initial_len = len(df)
     df.dropna(inplace=True)
     logger.info(f"Dropped {initial_len - len(df)} rows due to indicator warm-up")
-    
-    # Save processed file
-    processed_path = f"data/processed/{ticker}_features.csv"
-    os.makedirs("data/processed", exist_ok=True)
 
+    # Save processed file in main data/processed folder
+    processed_folder = os.path.join(main_folder, "data", "processed")
+    os.makedirs(processed_folder, exist_ok=True)
+    processed_path = os.path.join(processed_folder, f"{ticker}_features.csv")
     df.to_csv(processed_path, index=False)
+
     logger.info(f"Saved processed features for {ticker} | Rows: {len(df)} | Path: {processed_path}")
 
     return df
