@@ -54,3 +54,7 @@ data/processed/*.csv
 # Logs
 *.log
 
+# Model files (too large for git)
+models/
+*.pkl
+
